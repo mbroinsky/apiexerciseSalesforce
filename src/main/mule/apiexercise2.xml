@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="b38e5774-19a0-41d9-b592-fa50f1e5361f" basePath="/apiexercise" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="9583c5de-c834-4a9e-af08-623d5ee8587e" >
+		<db:generic-connection url="jdbc:postgresql://ec2-3-233-69-242.compute-1.amazonaws.com:5432/d8i8iif1ss69vk" driverClassName="org.postgresql.Driver" user=" msbaservices" password="p20948e2533ba65bb25228e36d9da94cbc19e21a509b05090db8243337df2683a" />
+	</db:config>
+	<flow name="apiexercise2Flow" doc:id="9ce65241-8552-4ad6-9428-73245a6d251d" >
+		<http:listener doc:name="Listener" doc:id="c4829fb4-1ee3-4d7b-ac54-ddb0a6befbf1" config-ref="HTTP_Listener_config" path="/orders" allowedMethods="GET,POST,DELETE"/>
+		<choice doc:name="Choice" doc:id="accfecf8-3dcb-426f-8b61-338afe9f06ea">
+			<when expression='#[attributes.method=="GET"]'>
+				<choice doc:name="Choice" doc:id="42d36431-44c6-46fb-91be-f3816fe6b9ef">
+					<when expression='#[attributes.queryParams.year != null]'>
+						<db:select doc:name="Select" doc:id="897f6734-5cc2-4aef-91c1-1b5b8ef33ccd" config-ref="Database_Config">
+					<db:sql><![CDATA[select * from orders_history where extract(year from order_date) = :year]]></db:sql>
+					<db:input-parameters><![CDATA[#[attributes.queryParams]]]></db:input-parameters>
+				</db:select>
+					</when>
+					<when expression='#[attributes.queryParams.status != null]'>
+						<db:select doc:name="Select" doc:id="a3d3e4bf-e3dc-4eee-bcc0-414037e4dbd8" config-ref="Database_Config">
+							<db:sql><![CDATA[select *, quantity*price as net_amount from orders_history where status = :status]]></db:sql>
+							<db:input-parameters><![CDATA[#[attributes.queryParams]]]></db:input-parameters>
+						</db:select>
+					</when>
+					<otherwise>
+						<db:select doc:name="Select" doc:id="af3699b7-075c-4401-be49-46216ef79c26" config-ref="Database_Config">
+							<db:sql><![CDATA[select * from orders_history]]></db:sql>
+							<db:input-parameters><![CDATA[#[attributes.queryParams]]]></db:input-parameters>
+						</db:select>
+					</otherwise>
+				</choice>
+				<ee:transform doc:name="Transform Message" doc:id="8dbe55fa-bc65-4047-b89e-02c12623fdb8">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json skipNullOn="everywhere"
+---
+(payload map {
+  	id: $.tx_number,
+  	date: $.order_date,
+	action: $.action,
+	status: $.status,
+	symbol: $.symbol,
+	quantity: $.quantity,
+	price: $.price,
+	net_amount: $.net_amount
+})
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<when expression='#[attributes.method=="POST"]'>
+				<db:insert doc:name="Insert" doc:id="731a0656-428e-45b1-97de-f3c6e9cffa75" config-ref="Database_Config">
+					<db:sql ><![CDATA[INSERT INTO ORDERS_HISTORY
+(
+	ORDER_DATE,
+	ACTION,
+    STATUS,
+	SYMBOL,
+	QUANTITY,
+	PRICE
+)
+VALUES
+(
+	NOW(),
+	:action,
+	'PENDING',
+	:symbol,
+	:quantity,
+	:price
+);]]></db:sql>
+					<db:input-parameters ><![CDATA[#[payload]]]></db:input-parameters>
+				</db:insert>
+				<set-payload value="Inserted OK" doc:name="Set Payload" doc:id="fe8b47ad-4547-4501-a90a-013a023f2cd2" />
+			</when>
+			<when expression='#[attributes.method=="DELETE"]'>
+				<db:delete doc:name="Delete" doc:id="8b2bec3e-15b2-49a5-ad52-fb0b219bc546" config-ref="Database_Config">
+					<db:sql ><![CDATA[DELETE FROM 
+ORDERS_HISTORY
+WHERE TX_NUMBER = :id]]></db:sql>
+					<db:input-parameters ><![CDATA[#[payload]]]></db:input-parameters>
+				</db:delete>
+				<set-payload value="Delete OK" doc:name="Set Payload" doc:id="260231b9-2688-4de9-8431-c859c5f227a4" />
+			</when>
+		</choice>
+	</flow>
+</mule>
